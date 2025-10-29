@@ -1,3 +1,26 @@
+const RAW_INDEX_URL = "https://raw.githubusercontent.com/delitamakanda/faq-worker/main/static/faq_index.json";
+
+let INDEX: Array<{ id:number; q:string; a:string; embedding:number[] }> = [];
+let ETAG: string | null = null;
+
+async function loadIndex(force = false) {
+  const headers: Record<string,string> = {};
+  if (ETAG && !force) headers["If-None-Match"] = ETAG;
+
+  const r = await fetch(RAW_INDEX_URL, { headers });
+  if (r.status === 304) return; // rien à faire
+  if (!r.ok) throw new Error(`Fetch index failed: ${r.status}`);
+
+  INDEX = await r.json();
+  ETAG = r.headers.get("etag");
+  console.log(`Index loaded: ${INDEX.length} items, etag=${ETAG ?? "none"}`);
+}
+
+// cold start
+await loadIndex();
+
+setInterval(() => loadIndex().catch(()=>{}), 15 * 60 * 1000);
+
 const ORIGIN = "https://delitamakanda.github.io";
 
 type FaqIndexItem = { id: number; q: string; a: string; embedding: number[] };
