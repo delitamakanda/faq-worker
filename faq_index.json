@@ -1,0 +1,26 @@
+[
+  {
+    "id": 0,
+    "q": "Quels services proposes-tu ?",
+    "a": "Développement full-stack (Vue, React, Angular, Coldfusion, Java, .NET), intégration design system, performance et accessibilité, microservices, monitoring.",
+    "embedding": [0]
+  },
+  {
+    "id": 1,
+    "q": "Comment te contacter ?",
+    "a": "Via linkedin ou par email pro : delita.makanda@gmail.com.",
+    "embedding": [0]
+  },
+  {
+    "id": 2,
+    "q": "Quelles technos maîtrises-tu ?",
+    "a": "Vue 3/4, React 18/19, Angular 18/19, TypeScript, Tailwind, Shadcn, Vite, Next, CI/CD Docker.",
+    "embedding": [0]
+  },
+  {
+    "id": 3,
+    "q": "Es-tu disponible en freelance ?",
+    "a": "Je privilégie des postes stables avec une vision long-terme. Je m’épanouis dans des environnements structurés et stimulants, où je peux contribuer durablement et monter en compétence.",
+    "embedding": [0]
+  }
+]
