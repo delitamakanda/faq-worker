@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "build:index": "node scripts/build-index.mjs"
+  }
+}
