@@ -1,0 +1,37 @@
+name: Build FAQ Index
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "static/faq.json"
+
+permissions:
+  contents: write
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate faq_index.json
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          node -v
+          node scripts/build-index.mjs
+
+      - name: Commit changes (if any)
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: regenerate static/faq_index.json"
+          file_pattern: static/faq_index.json
