@@ -10,7 +10,6 @@ if (!RAW_INDEX_URL)  throw new Error("Missing env RAW_INDEX_URL");
 let INDEX: FaqIndexItem[] = [];
 let ETAG: string | null = null;
 
-// --- utils ---
 function headersJSON(status = 200) {
   return {
     status,
@@ -19,40 +18,39 @@ function headersJSON(status = 200) {
       "Access-Control-Allow-Origin": ALLOW_ORIGIN,
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
     },
   };
 }
 
 function cosine(a: number[], b: number[]) {
   let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
   const denom = Math.sqrt(na) * Math.sqrt(nb);
   return denom ? (dot / denom) : 0;
 }
 
-// Charge/refresh l'index avec ETag
 async function loadIndex(force = false) {
   const hdrs: Record<string,string> = {};
   if (ETAG && !force) hdrs["If-None-Match"] = ETAG;
+
   const r = await fetch(RAW_INDEX_URL, { headers: hdrs });
-  if (r.status === 304) return; // pas de changement
+  if (r.status === 304) return;
   if (!r.ok) throw new Error(`Fetch index failed: ${r.status} ${r.statusText}`);
+
   INDEX = await r.json();
   ETAG = r.headers.get("etag");
   console.log(`Index loaded: ${INDEX.length} items (etag=${ETAG ?? "none"})`);
 }
 
-// Cold start: charge l'index
+// Cold start
 await loadIndex().catch((e) => {
-  console.error("Initial index load failed:", e);
-  // on laisse démarrer quand même; première requête échouera proprement
+  console.error("Initial index load failed:", e?.message || e);
 });
+setInterval(() => loadIndex().catch(()=>{}), 15 * 60 * 1000); // refresh 15 min
 
-// Refresh régulier (toutes les 15 minutes)
-setInterval(() => { loadIndex().catch(()=>{}); }, 15 * 60 * 1000);
-
-// --- mini rate-limit en mémoire par IP (fenêtre 60s) ---
+// Mini rate-limit (60 req/min/IP)
 const RL: Map<string, number[]> = new Map();
 function checkRateLimit(ip: string, limit = 60, windowMs = 60_000): string | null {
   const now = Date.now();
@@ -62,30 +60,39 @@ function checkRateLimit(ip: string, limit = 60, windowMs = 60_000): string | nul
   return null;
 }
 
-Deno.serve(async (req) => {
-  // CORS preflight
-  if (req.method === "OPTIONS") return new Response(null, { headers: headersJSON().headers });
+// Extracteur robuste (Chat completions + fallback)
+function extractAnswer(json: any): string | null {
+  const msg = json?.choices?.[0]?.message?.content;
+  if (typeof msg === "string" && msg.trim()) return msg.trim();
 
+  // Fallback Responses API (au cas où tu re-switches plus tard)
+  if (typeof json?.output_text === "string" && json.output_text.trim()) {
+    return json.output_text.trim();
+  }
+  if (Array.isArray(json?.output)) {
+    for (const item of json.output) {
+      const t = item?.content?.find?.((c: any) => typeof c?.text === "string")?.text;
+      if (t && t.trim()) return t.trim();
+    }
+  }
+  return null;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: headersJSON().headers });
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Use POST" }), headersJSON(405));
   }
 
-  // Rate-limit basique
-  const ip = req.headers.get("x-real-ip")
-         ?? req.headers.get("cf-connecting-ip")
-         ?? "anon";
+  const ip = req.headers.get("x-real-ip") ?? req.headers.get("cf-connecting-ip") ?? "anon";
   const rl = checkRateLimit(ip);
   if (rl) return new Response(JSON.stringify({ error: rl }), headersJSON(429));
 
-  // S'assure que l'index est chargé
-  if (!INDEX.length) {
-    try { await loadIndex(true); } catch {}
-  }
+  if (!INDEX.length) { try { await loadIndex(true); } catch {} }
   if (!INDEX.length) {
     return new Response(JSON.stringify({ error: "FAQ index unavailable" }), headersJSON(503));
   }
 
-  // Parse JSON
   let body: any;
   try { body = await req.json(); }
   catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), headersJSON(400)); }
@@ -103,13 +110,14 @@ Deno.serve(async (req) => {
   });
   if (!embRes.ok) {
     const t = await embRes.text();
-    return new Response(JSON.stringify({ error: "Embedding failed", details: t }), headersJSON(500));
+    console.log("Embedding error:", t.slice(0, 500));
+    return new Response(JSON.stringify({ error: "Embedding failed" }), headersJSON(500));
   }
   const embJson = await embRes.json();
-  const qVec = embJson.data?.[0]?.embedding as number[] | undefined;
+  const qVec = embJson?.data?.[0]?.embedding as number[] | undefined;
   if (!qVec) return new Response(JSON.stringify({ error: "Embedding shape error" }), headersJSON(500));
 
-  // Top-3
+  // Top-3 contexte
   const top = INDEX
     .map(item => ({ item, score: cosine(qVec, item.embedding) }))
     .sort((a,b) => b.score - a.score)
@@ -124,24 +132,27 @@ Tu NE réponds qu'à partir du contexte fourni. Si l'info n'est pas dedans, dis:
 
   const user = `Question: ${question}\n\nContexte FAQ:\n${context}`;
 
-  // LLM
-  const respRes = await fetch("https://api.openai.com/v1/responses", {
+  // **Chat Completions** (plus simple & stable pour extraire le texte)
+  const ccRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      input: [
+      messages: [
         { role: "system", content: system },
         { role: "user", content: user }
-      ]
+      ],
+      temperature: 0.2
     })
   });
-  if (!respRes.ok) {
-    const t = await respRes.text();
-    return new Response(JSON.stringify({ error: "LLM failed", details: t }), headersJSON(500));
-  }
-  const respJson = await respRes.json();
-  const answer = (respJson as any).output_text ?? "";
 
-  return new Response(JSON.stringify({ answer: String(answer).trim() }), headersJSON(200));
+  if (!ccRes.ok) {
+    const t = await ccRes.text();
+    console.log("chat.completions error:", t.slice(0, 800));
+    return new Response(JSON.stringify({ error: "LLM failed" }), headersJSON(500));
+  }
+
+  const ccJson = await ccRes.json();
+  const answer = extractAnswer(ccJson) || "Je n'ai pas cette info pour le moment.";
+  return new Response(JSON.stringify({ answer }), headersJSON(200));
 });
