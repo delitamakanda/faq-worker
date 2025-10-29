@@ -11,7 +11,7 @@ Cherche `faq_index.json` dans le repo portftolio avec cache ETag.
    - `OPENAI_API_KEY` = sk-xxxx
    - `RAW_INDEX_URL`  = https://raw.githubusercontent.com/<user>/<repo-pages>/main/static/faq_index.json
    - `ALLOW_ORIGIN`   = https://<user>.github.io (ou "*" pour tester)
-4. Deploy → récupère l’URL : `https://<app>.deno.dev`
+4. Deploy → récupère l’URL : `https://dlitamakand-faq-worker-18.deno.dev/`
 
 ## Appel
 
