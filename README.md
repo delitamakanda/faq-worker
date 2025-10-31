@@ -9,13 +9,13 @@ Cherche `faq_index.json` dans le repo portftolio avec cache ETag.
 2. "New Project" → "Import from GitHub" → sélectionne ce repo
 3. Dans **Settings → Environment Variables**, ajoute :
    - `OPENAI_API_KEY` = sk-xxxx
-   - `RAW_INDEX_URL`  = https://raw.githubusercontent.com/<user>/<repo-pages>/main/static/faq_index.json
-   - `ALLOW_ORIGIN`   = https://<user>.github.io (ou "*" pour tester)
+   - `RAW_INDEX_URL`  = https://raw.githubusercontent.com/delitamakanda/portftolio/main/static/faq_index.json
+   - `ALLOW_ORIGIN`   = https://delitamakanda.github.io (ou "*" pour tester)
 4. Deploy → récupère l’URL : `https://dlitamakand-faq-worker-18.deno.dev/`
 
 ## Appel
 
-POST `<url-deno>` avec JSON `{ "question": "..." }`.
+POST `https://dlitamakand-faq-worker-18.deno.dev/` avec JSON `{ "question": "..." }`.
 
 Réponse : `{ "answer": "..." }`.
 
